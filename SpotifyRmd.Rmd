@@ -1,0 +1,378 @@
+---
+title: "Spotify Segmentation"
+author: "Hamna Khalid"
+date: "2026-02-26"
+output: word_document
+---
+
+
+
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+##install.packages(c("tidyverse", "factoextra", "cluster", "janitor"))
+library(tidyverse)
+library(factoextra)
+library(cluster)
+library(janitor)
+library(GGally)
+library(reshape2)
+```
+
+Uploading dataset
+
+```{r}
+df <- read_csv("dataset.csv")
+df
+glimpse(df)
+dim(df)
+names(df)
+colSums(is.na(df))
+df %>%
+  select(where(is.numeric)) %>%
+  summary()
+```
+
+```{r}
+
+ggplot(df, aes(x = popularity)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Song Popularity",
+       x = "Popularity",
+       y = "Count")
+```
+
+
+```{r}
+ggplot(df, aes(x = energy)) +
+  geom_histogram(bins = 30, fill = "lightgreen", color = "black") +
+  labs(title = "Distribution of Energy",
+       x = "Energy",
+       y = "Count")
+
+```
+
+
+```{r}
+ggplot(df, aes(x = danceability)) +
+  geom_histogram(bins = 30, fill = "orange", color = "black") +
+  labs(title = "Distribution of Danceability",
+       x = "Danceability",
+       y = "Count")
+
+```
+
+
+```{r}
+
+ggplot(df, aes(x = acousticness)) +
+  geom_histogram(bins = 30, fill = "plum", color = "black") +
+  labs(title = "Distribution of Acousticness",
+       x = "Acousticness",
+       y = "Count")
+```
+
+
+```{r}
+ggplot(df, aes(x = valence)) +
+  geom_histogram(bins = 30, fill = "pink", color = "black") +
+  labs(title = "Distribution of Valence",
+       x = "Valence",
+       y = "Count")
+
+```
+
+```{r}
+eda_long <- df %>%
+  select(danceability, energy, acousticness, instrumentalness, valence) %>%
+  pivot_longer(cols = everything(), names_to = "feature", values_to = "value")
+
+ggplot(eda_long, aes(x = feature, y = value, fill = feature)) +
+  geom_boxplot() +
+  labs(title = "Boxplots of Key Spotify Audio Features",
+       x = "Feature",
+       y = "Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+```{r}
+corr_data <- df %>%
+  select(popularity, danceability, energy, loudness, speechiness,
+         acousticness, instrumentalness, liveness, valence, tempo)
+
+corr_matrix <- cor(corr_data, use = "complete.obs")
+
+corr_melt <- melt(corr_matrix)
+
+ggplot(corr_melt, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  labs(title = "Correlation Heatmap of Key Audio Features",
+       x = "",
+       y = "",
+       fill = "Correlation") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+```{r}
+ggplot(df, aes(x = acousticness, y = energy)) +
+  geom_point(alpha = 0.2, color = "darkblue") +
+  labs(title = "Energy vs Acousticness",
+       x = "Acousticness",
+       y = "Energy")
+
+```
+
+
+```{r}
+
+df %>%
+  count(track_genre, sort = TRUE) %>%
+  slice_head(n = 10) %>%
+  ggplot(aes(x = reorder(track_genre, n), y = n)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 10 Genres in the Dataset",
+       x = "Genre",
+       y = "Count")
+
+```
+Performing PCA
+
+```{r}
+pca_data <- df %>%
+  select(danceability, energy, loudness, speechiness,
+         acousticness, instrumentalness, liveness,
+         valence, tempo)
+
+```
+
+
+```{r}
+pca_scaled <- scale(pca_data)
+
+```
+
+
+```{r}
+pca_model <- prcomp(pca_scaled)
+summary(pca_model)
+
+```
+
+
+```{r}
+plot(pca_model, type = "l", main = "Scree Plot for PCA")
+
+```
+
+
+```{r}
+library(factoextra)
+
+fviz_pca_biplot(pca_model,
+                label = "var",
+                repel = TRUE,
+                title = "PCA Biplot of Spotify Audio Features")
+
+```
+
+
+```{r}
+summary(pca_model)
+```
+# Converting  explicit TRUE/FALSE into 0/1 (if it exists)
+
+```{r}
+# Converting  explicit TRUE/FALSE into 0/1 
+df <- df %>%
+  mutate(explicit = ifelse(explicit == TRUE, 1, 0))
+
+features <- df %>%
+  select(
+    popularity, duration_ms, explicit,
+    danceability, energy, key, loudness, mode,
+    speechiness, acousticness, instrumentalness,
+    liveness, valence, tempo, time_signature
+  )
+
+# Handle missing values (if any)
+features <- features %>%
+  mutate(across(everything(), ~ ifelse(is.na(.x), median(.x, na.rm = TRUE), .x)))
+
+
+```
+
+Scale the data 
+```{r}
+X <- scale(features)  # standardize (mean=0, sd=1)
+```
+
+choosing K 
+
+```{r}
+set.seed(123)
+sample_n <- 10000  
+idx <- sample(1:nrow(X), sample_n)
+
+X_sample <- X[idx, ]
+```
+
+Elbow Method
+
+```{r}
+fviz_nbclust(X_sample, kmeans, method = "wss") +
+  ggtitle("Elbow Method (WSS)")
+```
+
+Sillouhete Method
+
+```{r}
+fviz_nbclust(X_sample, kmeans, method = "silhouette") +
+  ggtitle("Silhouette Method")
+
+```
+
+choosing K=4 to 8 
+running K means 
+
+```{r}
+set.seed(123)
+k <- 5
+
+km <- kmeans(X, centers = k, nstart = 25)
+
+df_clustered <- df %>%
+  mutate(cluster = factor(km$cluster))
+```
+
+Visualizing Clusters 
+```{r}
+fviz_cluster(km, data = X,
+             geom = "point",
+             ellipse.type = "norm") +
+  ggtitle("Spotify Segmentation (K-means clusters)")
+```
+
+what does each segment mean?
+cluster profiles (mean feature values)
+
+
+```{r}
+cluster_profile <- df_clustered %>%
+  group_by(cluster) %>%
+  summarise(
+    n = n(),
+    across(c(popularity, danceability, energy, loudness,
+             speechiness, acousticness, instrumentalness,
+             liveness, valence, tempo, duration_ms),
+           mean, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cluster_profile
+
+
+```
+Top genres per cluster
+
+```{r}
+top_genres <- df_clustered %>%
+  count(cluster, track_genre, sort = TRUE) %>%
+  group_by(cluster) %>%
+  slice_head(n = 10)
+
+top_genres
+```
+
+Sample "example tracks" per cluster
+```{r}
+example_tracks <- df_clustered %>%
+  select(cluster, track_name, artists, track_genre, popularity) %>%
+  group_by(cluster) %>%
+  slice_max(order_by = popularity, n = 5) %>%
+  arrange(cluster, desc(popularity))
+
+example_tracks
+```
+
+
+
+
+
+```{r}
+cluster_profile
+```
+Cluster 1 = Acoustic & Soft Listeners
+Cluster 2 = High-Intensity / Workout Listeners
+Cluster 3 = Upbeat Pop / Party Listeners (largest cluster)
+Cluster 4 = Rap / Hip-Hop Focused Listeners
+Cluster 5 = Instrumental / Study & Ambient Listeners
+
+
+```{r}
+
+```
+
+
+
+
+```{r}
+
+```
+
+
+
+
+```{r}
+
+```
+
+
+
+```{r}
+
+```
+
+
+
+
+
+```{r}
+
+```
+
+
+
+
+```{r}
+
+```
+
+
+
+
+```{r}
+
+```
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
